@@ -1,0 +1,1966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Wordle Royale: Team Clash</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Canvas Confetti CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <!-- PeerJS for WebRTC -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800;900&family=Space+Grotesk:wght@600;700;800;900&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .font-display {
+      font-family: 'Space Grotesk', sans-serif;
+    }
+    .tile-cell {
+      perspective: 1000px;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+    .tile-cell.pop {
+      animation: popIn 0.12s ease-in-out;
+    }
+    @keyframes popIn {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.14); }
+      100% { transform: scale(1); }
+    }
+    .tile-flip {
+      animation: flipTile 0.5s ease forwards;
+    }
+    @keyframes flipTile {
+      0% { transform: rotateX(0); }
+      50% { transform: rotateX(90deg); }
+      100% { transform: rotateX(0); }
+    }
+    .shake-row {
+      animation: shake 0.45s ease-in-out;
+    }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      20%, 60% { transform: translateX(-6px); }
+      40%, 80% { transform: translateX(6px); }
+    }
+    @keyframes bounceSolver {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+    .bounce-winner {
+      animation: bounceSolver 0.6s infinite ease-in-out;
+    }
+    /* Custom mini tile colors */
+    .mini-correct { background-color: #10b981 !important; border-color: #059669 !important; }
+    .mini-present { background-color: #f59e0b !important; border-color: #d97706 !important; }
+    .mini-absent  { background-color: #334155 !important; border-color: #1e293b !important; }
+    .mini-empty   { background-color: #0f172a !important; border-color: #1e293b !important; }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: rgba(15, 23, 42, 0.6); }
+    ::-webkit-scrollbar-thumb { background: rgba(16, 185, 129, 0.4); border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between overflow-x-hidden selection:bg-emerald-500 selection:text-white">
+
+  <header class="border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md sticky top-0 z-40 px-3 sm:px-6 py-2.5 flex items-center justify-between">
+    <div class="flex items-center gap-2 sm:gap-3">
+      <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 via-teal-500 to-amber-400 p-[2px] shadow-lg shadow-emerald-500/20">
+        <div class="w-full h-full bg-slate-950 rounded-[14px] flex items-center justify-center font-display font-black text-emerald-400 text-lg sm:text-xl">
+          W
+        </div>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="font-display font-black text-base sm:text-lg tracking-tight text-white">WORDLE ROYALE</h1>
+          <span id="globalNetBadge" class="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 flex items-center gap-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            Sync Ready
+          </span>
+        </div>
+        <p class="text-[10px] sm:text-xs text-slate-400 hidden sm:block">Real-Time Team Wordle Race • N Rounds • Live Progress Grids</p>
+      </div>
+    </div>
+
+    <!-- Right Header Controls -->
+    <div class="flex items-center gap-2">
+      <div id="roomPillHeader" class="hidden px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700 text-xs font-mono font-bold text-emerald-400 flex items-center gap-1.5 shadow-inner">
+        <span class="text-slate-400 font-normal">ROOM:</span>
+        <span id="roomCodeHeaderText" class="tracking-widest font-black text-white">-----</span>
+      </div>
+
+      <button id="soundToggleBtn" class="px-2.5 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-xs font-bold flex items-center gap-1 transition active:scale-95 shadow">
+        <span id="soundIcon">🔊</span>
+        <span class="hidden sm:inline" id="soundLabel">Sound</span>
+      </button>
+
+      <button id="switchRoleNavBtn" class="px-2.5 py-1 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-xs font-bold transition active:scale-95">
+        Exit / Role
+      </button>
+    </div>
+  </header>
+
+  <section id="roleSelectView" class="flex-1 w-full max-w-4xl mx-auto p-4 flex flex-col justify-center items-center">
+    <div class="text-center mb-8">
+      <span class="inline-block px-3 py-1 rounded-full bg-gradient-to-r from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-extrabold uppercase tracking-wider mb-2">
+        Simultaneous Multiplayer Wordle • Standard Dictionary Words
+      </span>
+      <h2 class="text-3xl sm:text-6xl font-display font-black text-white tracking-tight">
+        WORDLE CLASH
+      </h2>
+      <p class="text-slate-400 text-xs sm:text-base max-w-md mx-auto mt-2">
+        Every team races on the <b class="text-emerald-400 font-semibold">exact same 5-letter word</b> in real-time. First team to solve it scores maximum points!
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-5 w-full max-w-2xl">
+      <!-- Card: Launch as Host -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-7 flex flex-col justify-between hover:border-emerald-500/50 transition-all shadow-xl group">
+        <div>
+          <div class="w-12 h-12 rounded-2xl bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+            🖥️
+          </div>
+          <h3 class="font-display font-black text-2xl text-white">Host / Big Screen</h3>
+          <p class="text-slate-400 text-xs sm:text-sm mt-1 leading-relaxed">
+            Main display for TV, projector, or laptop. Controls rounds, round timer, monitors all teams' live Wordle tile grids, and displays instant winner banners.
+          </p>
+        </div>
+        <button id="startHostRoleBtn" class="mt-6 w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 font-display font-black text-white text-base shadow-lg shadow-emerald-600/30 transition active:scale-95 cursor-pointer">
+          CREATE GAME ROOM →
+        </button>
+      </div>
+
+      <!-- Card: Join as Participant -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-3xl p-6 sm:p-7 flex flex-col justify-between hover:border-amber-500/50 transition-all shadow-xl group">
+        <div>
+          <div class="w-12 h-12 rounded-2xl bg-amber-600/20 text-amber-400 border border-amber-500/30 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+            📱
+          </div>
+          <h3 class="font-display font-black text-2xl text-white">Join as Team</h3>
+          <p class="text-slate-400 text-xs sm:text-sm mt-1 leading-relaxed">
+            Controller screen for phones & laptops. 6-guess interactive Wordle grid, virtual QWERTY keyboard, haptics, and instant word validation.
+          </p>
+        </div>
+        <button id="startPlayerRoleBtn" class="mt-6 w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-rose-500 hover:from-amber-400 hover:to-rose-400 font-display font-black text-white text-base shadow-lg shadow-amber-600/30 transition active:scale-95 cursor-pointer">
+          ENTER ROOM CODE →
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section id="hostLobbyView" class="hidden flex-1 w-full max-w-5xl mx-auto p-3 sm:p-6 flex flex-col justify-center">
+    <div class="bg-slate-900/95 border border-slate-800 rounded-3xl p-5 sm:p-8 backdrop-blur-xl shadow-2xl">
+      
+      <!-- Top Room Code & Invite Banner -->
+      <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-slate-800 pb-5 mb-5">
+        <div>
+          <span class="text-[10px] uppercase font-extrabold tracking-widest text-emerald-400">Host Command Station</span>
+          <h2 class="text-2xl sm:text-4xl font-display font-black text-white">Lobby & Game Settings</h2>
+          <p class="text-slate-400 text-xs sm:text-sm mt-0.5">Players can scan the QR code or enter the code to join.</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Room Code Box -->
+          <div class="bg-slate-950 px-4 py-2 rounded-2xl border-2 border-emerald-500/40 text-center shadow-inner">
+            <span class="text-[9px] uppercase font-bold text-slate-400 tracking-wider block">ROOM CODE</span>
+            <span id="hostRoomCodeText" class="text-2xl sm:text-3xl font-mono font-black text-emerald-400 tracking-widest">ABCD</span>
+          </div>
+
+          <button id="hostShowQrBtn" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer">
+            <span>📷</span> QR Code
+          </button>
+
+          <button id="hostCopyLinkBtn" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer">
+            <span>🔗</span> Copy Link
+          </button>
+
+          <button id="hostAddBotTeamBtn" title="Add a local simulated team to test immediately" class="px-3 py-2.5 rounded-xl bg-teal-900/50 hover:bg-teal-800/60 text-teal-200 border border-teal-700/60 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer">
+            <span>➕</span> Add Demo Team
+          </button>
+        </div>
+      </div>
+
+      <!-- Settings Grid: Timer, Rounds, Word Bank & Grace Period -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-5 p-4 bg-slate-950/70 rounded-2xl border border-slate-800">
+        <!-- Turn Timer Slider (30s to 180s or Unlimited) -->
+        <div>
+          <div class="flex justify-between items-center mb-1">
+            <label class="text-xs font-bold uppercase text-slate-400">Round Timer</label>
+            <span id="hostTimerDisplay" class="text-xs font-mono font-black text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">90s</span>
+          </div>
+          <input type="range" id="hostTimerSlider" min="30" max="180" step="15" value="90" class="w-full accent-emerald-400 bg-slate-800 rounded-lg cursor-pointer h-2">
+          <div class="flex justify-between text-[10px] text-slate-500 font-mono mt-1">
+            <span>30s Blitz</span>
+            <span>90s Standard</span>
+            <span>180s Relaxed</span>
+          </div>
+        </div>
+
+        <!-- N Number of Rounds Configurable -->
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-400 mb-1.5">Number of Rounds ($N$)</label>
+          <select id="hostRoundsSelect" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-semibold focus:outline-none focus:border-emerald-500">
+            <option value="3">3 Rounds</option>
+            <option value="5" selected>5 Rounds</option>
+            <option value="8">8 Rounds</option>
+            <option value="10">10 Rounds</option>
+            <option value="15">15 Rounds</option>
+            <option value="infinite">∞ Infinite (Free Play)</option>
+          </select>
+          <span class="text-[10px] text-slate-500 mt-1 block">Non-repeating word shuffle</span>
+        </div>
+
+        <!-- Curated Dictionary Categories -->
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-400 mb-1.5">Category Hint</label>
+          <select id="hostCategorySelect" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-semibold focus:outline-none focus:border-emerald-500">
+            <option value="show" selected>Show Category / Theme Badge</option>
+            <option value="hide">No Category (Blind Wordle)</option>
+          </select>
+          <span class="text-[10px] text-slate-500 mt-1 block">Helpful party clue tag</span>
+        </div>
+
+        <!-- Grace Period after 1st solver -->
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-400 mb-1.5">After 1st Solve</label>
+          <select id="hostGracePeriodSelect" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-semibold focus:outline-none focus:border-emerald-500">
+            <option value="15" selected>15s Grace Period for others</option>
+            <option value="10">10s Quick Grace</option>
+            <option value="0">End Round Immediately</option>
+          </select>
+          <span class="text-[10px] text-slate-500 mt-1 block">Allows 2nd & 3rd to score</span>
+        </div>
+      </div>
+
+      <!-- Joined Teams Grid -->
+      <div class="mb-5">
+        <div class="flex items-center justify-between mb-2.5">
+          <h4 class="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+            <span>Connected Teams</span>
+            <span id="hostTeamsCountBadge" class="px-2 py-0.5 rounded-full bg-slate-800 text-xs font-mono text-emerald-400">0 Connected</span>
+          </h4>
+          <span class="text-xs text-slate-500">Need at least 2 teams to play</span>
+        </div>
+
+        <div id="hostLobbyTeamsGrid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 min-h-[90px] p-3 bg-slate-950/80 rounded-2xl border border-slate-800">
+          <div class="col-span-full flex flex-col items-center justify-center text-slate-500 py-6 text-xs sm:text-sm">
+            <span>No teams connected yet.</span>
+            <span class="text-[11px] text-slate-600 mt-1">Open another browser window or scan QR code to join!</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Launch Button -->
+      <button id="hostStartMatchBtn" disabled class="w-full py-4 rounded-2xl bg-slate-800 text-slate-500 font-display font-black text-base sm:text-lg transition cursor-not-allowed">
+        WAITING FOR TEAMS (MIN 2)...
+      </button>
+    </div>
+  </section>
+
+  <section id="playerJoinView" class="hidden flex-1 w-full max-w-md mx-auto p-4 flex flex-col justify-center">
+    <div class="bg-slate-900/95 border border-slate-800 rounded-3xl p-6 sm:p-8 backdrop-blur-xl shadow-2xl">
+      <div class="text-center mb-5">
+        <div class="w-14 h-14 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center text-3xl mx-auto mb-2 font-display font-black">
+          W
+        </div>
+        <h2 class="text-2xl sm:text-3xl font-display font-black text-white">Join Wordle Clash</h2>
+        <p class="text-slate-400 text-xs sm:text-sm mt-0.5">Enter Room Code shown on the big screen.</p>
+      </div>
+
+      <div class="space-y-3.5 mb-5">
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Room Code</label>
+          <input type="text" id="playerJoinCodeInput" maxlength="5" placeholder="ABCD" class="w-full bg-slate-950 border-2 border-slate-800 focus:border-emerald-500 rounded-xl px-4 py-3 text-center font-mono font-black text-2xl uppercase tracking-widest text-white focus:outline-none">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Team Name</label>
+          <input type="text" id="playerTeamNameInput" maxlength="15" placeholder="e.g. Word Wizards" class="w-full bg-slate-950 border border-slate-800 focus:border-emerald-500 rounded-xl px-4 py-2.5 font-bold text-white focus:outline-none">
+        </div>
+
+        <!-- Avatar Choice -->
+        <div>
+          <label class="block text-xs font-bold uppercase text-slate-400 mb-2">Team Badge</label>
+          <div id="playerAvatarGrid" class="grid grid-cols-4 gap-2"></div>
+        </div>
+      </div>
+
+      <div id="playerJoinStatus" class="text-xs text-center font-bold text-slate-400 mb-3 hidden">
+        Connecting to room...
+      </div>
+
+      <button id="playerConnectBtn" class="w-full py-3.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 font-display font-black text-white text-base shadow-lg shadow-emerald-600/30 active:scale-95 transition cursor-pointer">
+        CONNECT & JOIN ROOM →
+      </button>
+    </div>
+  </section>
+
+  <section id="playerWaitingView" class="hidden flex-1 w-full max-w-md mx-auto p-4 flex flex-col justify-center text-center">
+    <div class="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+      <div id="pWaitingBadge" class="w-20 h-20 rounded-3xl mx-auto flex items-center justify-center text-4xl shadow-xl mb-3 border-2">
+        🐺
+      </div>
+      <h2 id="pWaitingName" class="text-2xl font-display font-black text-white">Word Wizards</h2>
+      <span class="inline-block px-3 py-1 bg-emerald-500/20 text-emerald-300 font-bold text-xs rounded-full border border-emerald-500/30 my-3">
+        ● Connected to Room <span id="pWaitingRoomCode" class="font-mono">ABCD</span>
+      </span>
+      <p class="text-slate-400 text-xs sm:text-sm mt-2 leading-relaxed">
+        Get ready! When the Host starts the match, all teams will get the exact same 5-letter word at the same time. Type fast, analyze colors, and solve in the fewest guesses!
+      </p>
+      <div class="mt-6 flex justify-center">
+        <div class="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="hostArenaView" class="hidden flex-1 w-full max-w-7xl mx-auto p-3 sm:p-5 flex flex-col gap-3 sm:gap-4">
+    
+    <!-- Top Host Status Bar: Round, Timer, Category Badge & Action Buttons -->
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+      
+      <!-- Round Info & Category Badge -->
+      <div class="md:col-span-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex items-center justify-between shadow-lg">
+        <div>
+          <span class="text-[9px] font-black uppercase tracking-widest text-emerald-400 block">Round Progress</span>
+          <h3 id="hostRoundBadge" class="font-display font-black text-xl text-white">Round 1 / 5</h3>
+        </div>
+        <div id="hostCategoryPill" class="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-mono font-bold flex items-center gap-1.5">
+          <span id="hostCategoryIcon">🌿</span>
+          <span id="hostCategoryName">Nature & Outdoors</span>
+        </div>
+      </div>
+
+      <!-- Round Timer Bar -->
+      <div class="md:col-span-5 bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-col justify-between shadow-lg">
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-xs uppercase text-slate-400 font-bold">Round Clock:</span>
+          <span id="hostTimerText" class="font-mono font-black text-2xl text-emerald-400">90s</span>
+        </div>
+        <div class="w-full bg-slate-950 rounded-full h-3 p-0.5 border border-slate-800 overflow-hidden">
+          <div id="hostTimerBar" class="h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all duration-300" style="width: 100%;"></div>
+        </div>
+      </div>
+
+      <!-- Host Action Controls -->
+      <div class="md:col-span-3 bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex items-center justify-between gap-1.5">
+        <button id="hostPauseBtn" class="flex-1 py-2 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 cursor-pointer">
+          ⏸️ Pause
+        </button>
+        <button id="hostSkipBtn" class="flex-1 py-2 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-amber-400 cursor-pointer">
+          ⏭️ Skip
+        </button>
+        <button id="hostEndMatchEarlyBtn" class="py-2 px-2.5 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800 text-xs font-bold cursor-pointer">
+          End Match
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Solver Flash Alert Banner -->
+    <div id="hostLiveSolverBanner" class="hidden bg-gradient-to-r from-emerald-950 via-teal-900 to-emerald-950 border-2 border-emerald-400 rounded-2xl p-3 sm:p-4 text-center shadow-[0_0_40px_rgba(16,185,129,0.3)] animate-pulse">
+      <div class="flex items-center justify-center gap-2">
+        <span class="text-2xl">⚡</span>
+        <span id="hostSolverBannerText" class="font-display font-black text-lg sm:text-2xl text-emerald-300">TEAM ALPHA SOLVED THE WORD IN 3 TRIES! (+100 PTS)</span>
+        <span class="text-2xl">⚡</span>
+      </div>
+      <p id="hostGraceCountdownText" class="text-xs text-amber-300 font-mono font-bold mt-1">15s Grace period remaining for other teams!</p>
+    </div>
+
+    <!-- Main Teams Grid: Live Mini-Wordle Cards for ALL Teams -->
+    <div class="flex-1 bg-slate-900/60 border border-slate-800 rounded-3xl p-4 sm:p-5 flex flex-col shadow-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <h4 class="font-display font-black text-lg sm:text-xl text-white flex items-center gap-2">
+          <span>Live Team Progress Grids</span>
+          <span class="text-xs font-normal text-slate-400">(Real-Time Tile Matrix)</span>
+        </h4>
+        <span class="text-xs text-slate-400 font-mono">Simultaneous 5-Letter Target</span>
+      </div>
+
+      <!-- Dynamic Grid of Teams -->
+      <div id="hostTeamCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5 overflow-y-auto max-h-[60vh] pr-1">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </section>
+
+  <section id="playerGameView" class="hidden flex-1 w-full max-w-lg mx-auto p-2 sm:p-4 flex flex-col justify-between gap-2 sm:gap-3">
+    
+    <!-- Top Player Status Card -->
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2.5 sm:p-3 flex items-center justify-between shadow-lg">
+      <div class="flex items-center gap-2.5">
+        <div id="pGameBadge" class="w-10 h-10 rounded-xl flex items-center justify-center text-xl font-bold shadow">
+          🐺
+        </div>
+        <div>
+          <h3 id="pGameTeamName" class="font-display font-black text-white text-sm sm:text-base leading-tight">Word Wizards</h3>
+          <span class="text-xs text-amber-400 font-mono font-bold">★ <span id="pGameScore">0</span> pts</span>
+        </div>
+      </div>
+      
+      <!-- Right: Clock & Round Badge -->
+      <div class="text-right">
+        <span id="pGameRoundPill" class="text-[10px] font-black uppercase text-slate-400 block">ROUND 1/5</span>
+        <span id="pGameClockText" class="font-mono font-black text-lg sm:text-xl text-emerald-400">90s</span>
+      </div>
+    </div>
+
+    <!-- Category / Hint Banner -->
+    <div id="pGameCategoryBanner" class="bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-1.5 flex items-center justify-between text-xs">
+      <span class="text-slate-400 font-bold uppercase text-[10px]">THEME / CATEGORY:</span>
+      <span id="pGameCategoryText" class="font-bold text-emerald-400 font-mono">🌿 Nature & Outdoors</span>
+    </div>
+
+    <!-- 6-ROW WORDLE GRID CONTAINER -->
+    <div class="flex-1 flex items-center justify-center py-1">
+      <div id="wordleBoard" class="grid grid-rows-6 gap-1.5 sm:gap-2 w-full max-w-[310px] sm:max-w-[340px]">
+        <!-- 6 rows generated dynamically -->
+      </div>
+    </div>
+
+    <!-- Message / Shake Toast -->
+    <div id="pGameToast" class="text-center min-h-[22px] text-xs font-bold text-amber-400 font-mono transition-opacity opacity-0">
+      Invalid word!
+    </div>
+
+    <!-- FULL VIRTUAL QWERTY KEYBOARD -->
+    <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-1.5 sm:p-2.5 shadow-xl select-none">
+      <div id="playerVirtualKeyboard" class="flex flex-col gap-1.5">
+        <!-- Rows of keys injected dynamically -->
+      </div>
+    </div>
+  </section>
+
+  <div id="qrCodeModal" class="hidden fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="max-w-sm w-full bg-slate-900 border border-emerald-500/50 rounded-3xl p-6 text-center shadow-2xl">
+      <h3 class="font-display font-black text-2xl text-white mb-1">Scan to Join Wordle</h3>
+      <p class="text-xs text-slate-400 mb-4">Point phone camera to join the room instantly:</p>
+      
+      <!-- Pure SVG QR Container -->
+      <div id="qrSvgWrapper" class="bg-white p-4 rounded-2xl mx-auto w-56 h-56 flex items-center justify-center shadow-inner"></div>
+
+      <div class="mt-4">
+        <span class="text-[10px] uppercase font-bold text-slate-400 block">Room Code</span>
+        <span id="qrRoomCodeBadge" class="font-mono font-black text-2xl text-emerald-400 tracking-widest">ABCD</span>
+      </div>
+
+      <button id="closeQrModalBtn" class="mt-5 w-full py-3 rounded-xl bg-slate-800 text-slate-300 font-bold text-sm cursor-pointer">
+        Close QR Code
+      </button>
+    </div>
+  </div>
+
+  <section id="roundRecapModal" class="hidden fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
+    <div class="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 text-center shadow-2xl">
+      <div id="recapIcon" class="w-16 h-16 mx-auto rounded-3xl flex items-center justify-center text-4xl mb-3 shadow-lg">🎯</div>
+      <h3 id="recapTitle" class="text-2xl sm:text-3xl font-display font-black text-white mb-1">Round Complete!</h3>
+      <p id="recapSubtext" class="text-xs sm:text-sm text-slate-400 mb-4">Here is the round summary.</p>
+
+      <!-- Revealed Word -->
+      <div class="bg-slate-950 rounded-2xl p-4 border border-slate-800 mb-5">
+        <span class="text-[10px] uppercase tracking-widest font-bold text-slate-500 block mb-1">The Target Word Was</span>
+        <div id="recapTargetWord" class="font-mono font-black text-3xl sm:text-4xl text-emerald-400 tracking-widest">CRANE</div>
+      </div>
+
+      <!-- Solvers List for this round -->
+      <div class="mb-5 text-left">
+        <span class="text-[11px] uppercase font-bold text-slate-400 mb-1.5 block">Solvers This Round:</span>
+        <div id="recapSolversList" class="space-y-1.5 max-h-36 overflow-y-auto"></div>
+      </div>
+
+      <div id="hostAdvanceBtnWrap">
+        <button id="advanceRoundBtn" class="w-full py-3.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 font-display font-bold text-white text-base shadow-xl active:scale-95 transition cursor-pointer">
+          Next Round →
+        </button>
+      </div>
+      <p id="playerWaitNextNotice" class="text-xs text-slate-500 hidden">Waiting for Host to advance...</p>
+    </div>
+  </section>
+
+  <section id="podiumModal" class="hidden fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-xl flex items-center justify-center p-4 overflow-y-auto">
+    <div class="max-w-2xl w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 text-center shadow-2xl my-auto">
+      <span class="px-4 py-1 rounded-full bg-amber-500/20 text-amber-300 text-xs font-black uppercase tracking-widest border border-amber-500/30">
+        🏆 Match Complete!
+      </span>
+      <h2 class="text-3xl sm:text-5xl font-display font-black text-white mt-2 mb-1">Grand Champions</h2>
+      <p class="text-slate-400 text-xs sm:text-sm mb-6">Final verified team standings, solves & awards:</p>
+
+      <div id="podiumColumnsWrap" class="flex justify-center items-end gap-3 mb-6 pt-3"></div>
+      <div id="podiumLeaderboardList" class="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden mb-5 text-left divide-y divide-slate-900"></div>
+
+      <div class="flex gap-3">
+        <button id="rematchHostBtn" class="flex-1 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-display font-bold text-white text-base cursor-pointer">
+          🔄 Play Rematch
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <script>
+    class PartySoundEngine {
+      constructor() {
+        this.ctx = null;
+        this.muted = false;
+      }
+      init() {
+        if (!this.ctx) {
+          const AudioContext = window.AudioContext || window.webkitAudioContext;
+          if (AudioContext) this.ctx = new AudioContext();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      }
+      toggleMute() {
+        this.muted = !this.muted;
+        return this.muted;
+      }
+      playTone(freq, type, duration, gainStart = 0.2, gainEnd = 0.001) {
+        if (this.muted) return;
+        try {
+          this.init();
+          if (!this.ctx) return;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+          gain.gain.setValueAtTime(gainStart, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(gainEnd, this.ctx.currentTime + duration);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start();
+          osc.stop(this.ctx.currentTime + duration);
+        } catch (e) {}
+      }
+      keyTap() {
+        if (this.muted) return;
+        this.playTone(550, 'sine', 0.04, 0.08);
+      }
+      tileFlipChime(index) {
+        if (this.muted) return;
+        const freqs = [523.25, 659.25, 783.99, 987.77, 1046.5];
+        const f = freqs[index % freqs.length] || 600;
+        this.playTone(f, 'sine', 0.12, 0.15);
+      }
+      shakeBuzz() {
+        if (this.muted) return;
+        this.init();
+        try {
+          if (!this.ctx) return;
+          const now = this.ctx.currentTime;
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(140, now);
+          osc.frequency.exponentialRampToValueAtTime(70, now + 0.2);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+          osc.connect(gain);
+          gain.connect(this.ctx.destination);
+          osc.start(now);
+          osc.stop(now + 0.2);
+        } catch (e) {}
+      }
+      solveCheer() {
+        if (this.muted) return;
+        [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+          setTimeout(() => this.playTone(freq, 'triangle', 0.25, 0.25), idx * 80);
+        });
+      }
+      tick() {
+        if (this.muted) return;
+        this.playTone(880, 'triangle', 0.02, 0.04);
+      }
+      fanfare() {
+        if (this.muted) return;
+        [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((freq, idx) => {
+          setTimeout(() => this.playTone(freq, 'sine', 0.35, 0.3), idx * 120);
+        });
+      }
+    }
+    const sound = new PartySoundEngine();
+
+    const WORDLE_CATEGORIES = {
+      nature: {
+        name: "Nature & Outdoors",
+        icon: "🌿",
+        words: ["OCEAN", "RIVER", "SOLAR", "FLAME", "CLOUD", "PLANT", "STORM", "BEACH", "FROST", "STONE", "BLOOM", "TREES", "EARTH", "CLIFF", "GRASS"]
+      },
+      animals: {
+        name: "Animal Kingdom",
+        icon: "🐾",
+        words: ["TIGER", "EAGLE", "SHARK", "WHALE", "HORSE", "ZEBRA", "PANDA", "OTTER", "VIPER", "HYENA", "KOALA", "CAMEL", "MOOSE", "RAVEN", "LEMUR"]
+      },
+      food: {
+        name: "Food & Kitchen",
+        icon: "🍕",
+        words: ["PIZZA", "BREAD", "APPLE", "LEMON", "ONION", "MANGO", "BERRY", "PASTA", "SUGAR", "HONEY", "SALAD", "TOAST", "SPICE", "MELON", "GRAIN"]
+      },
+      objects: {
+        name: "Tools & Objects",
+        icon: "🔦",
+        words: ["CLOCK", "CHAIR", "KNIFE", "TORCH", "BRUSH", "CABLE", "RADIO", "PHONE", "WHEEL", "SPEAR", "FLASK", "LOCKS", "SCALE", "PIANO", "QUILT"]
+      },
+      actions: {
+        name: "Actions & Verbs",
+        icon: "⚡",
+        words: ["CLIMB", "CHASE", "DANCE", "LAUGH", "JUMBO", "FLOAT", "MARCH", "SPEED", "SHINE", "TRACE", "SWEEP", "CRAWL", "BLINK", "SCORE", "SPARK"]
+      },
+      emotions: {
+        name: "Feelings & Vibes",
+        icon: "✨",
+        words: ["BRAVE", "HAPPY", "NOBLE", "LUCKY", "SWEET", "PROUD", "SHARP", "GRAND", "SWIFT", "CLEVER", "PEACE", "CHARM", "MAGIC", "JOLLY", "QUIET"]
+      },
+      travel: {
+        name: "Travel & Places",
+        icon: "🏔️",
+        words: ["CABIN", "TRAIN", "TOWER", "HOTEL", "TRACK", "ROUTE", "ISLE", "OASIS", "VILLA", "MANOR", "RIDGE", "SHORE", "HAVEN", "PLAZA", "METRO"]
+      },
+      science: {
+        name: "Science & Space",
+        icon: "🔬",
+        words: ["ORBIT", "LASER", "PRISM", "RADAR", "ATOMS", "VIRUS", "LUNAR", "PROBE", "FORCE", "LIGHT", "PULSE", "SONIC", "ROBOT", "ALPHA", "DELTA"]
+      }
+    };
+
+    // Standard valid 5-letter words set for dictionary checking
+    const VALID_DICTIONARY_SET = new Set([
+      "ABOUT", "ABOVE", "ACTOR", "ACUTE", "ADMIT", "ADOPT", "ADULT", "AFTER", "AGAIN", "AGENT", "AGREE", "AHEAD", "ALARM", "ALBUM", "ALERT", "ALIKE", "ALIVE", "ALLOW", "ALONE", "ALONG", "ALTER", "AMONG", "ANGER", "ANGLE", "ANGRY", "APART", "APPLE", "APPLY", "ARENA", "ARGUE", "ARISE", "ARMED", "ARMOR", "ARROW", "ASIDE", "ASSET", "AUDIO", "AUDIT", "AVOID", "AWAIT", "AWAKE", "AWARD", "AWARE", "BADGE", "BAKER", "BASIC", "BASIS", "BEACH", "BEGAN", "BEGIN", "BEING", "BELOW", "BENCH", "BERRY", "BILLY", "BIRTH", "BLACK", "BLAME", "BLAND", "BLANK", "BLAST", "BLAZE", "BLIND", "BLINK", "BLOCK", "BLOOD", "BLOOM", "BLOWN", "BOARD", "BOAST", "BONUS", "BOOST", "BOOTH", "BOUND", "BRAIN", "BRAKE", "BRAND", "BRAVE", "BREAD", "BREAK", "BREED", "BRIEF", "BRING", "BROAD", "BROKE", "BROWN", "BRUSH", "BUDDY", "BUILD", "BUILT", "BUNCH", "BURST", "BUYER", "CABIN", "CABLE", "CALIF", "CANDY", "CARRY", "CATCH", "CAUSE", "CHAIN", "CHAIR", "CHAMP", "CHART", "CHASE", "CHEAP", "CHECK", "CHEST", "CHIEF", "CHILD", "CHILL", "CHINA", "CHIPS", "CHOIR", "CIVIL", "CLAIM", "CLASS", "CLEAN", "CLEAR", "CLERK", "CLICK", "CLIFF", "CLIMB", "CLOCK", "CLOSE", "CLOUD", "COACH", "COAST", "COLOR", "COUCH", "COUNT", "COURT", "COVER", "CRACK", "CRAFT", "CRANE", "CRASH", "CRAWL", "CRAZY", "CREAM", "CREEK", "CRIME", "CROSS", "CROWD", "CROWN", "CRUDE", "CURVE", "CYCLE", "DAILY", "DANCE", "DATED", "DEALT", "DEATH", "DEBUG", "DELAY", "DELTA", "DENSE", "DEPOT", "DEPTH", "DEVIL", "DIARY", "DIGIT", "DIRTY", "DISCO", "DIVER", "DODGE", "DRAFT", "DRAIN", "DRAMA", "DRANK", "DRAWN", "DREAM", "DRESS", "DRIED", "DRIFT", "DRINK", "DRIVE", "DROVE", "DYING", "EAGER", "EAGLE", "EARLY", "EARTH", "EIGHT", "ELITE", "EMPTY", "ENEMY", "ENJOY", "ENTER", "ENTRY", "EQUAL", "EQUIP", "ERROR", "EVENT", "EVERY", "EXACT", "EXIST", "EXTRA", "FAITH", "FALSE", "FAULT", "FAVOR", "FIBER", "FIELD", "FIFTH", "FIFTY", "FIGHT", "FINAL", "FIRST", "FIXED", "FLAME", "FLASH", "FLEET", "FLESH", "FLOAT", "FLOOD", "FLOOR", "FLOUR", "FLOWN", "FLUID", "FOCUS", "FORCE", "FORTH", "FORTY", "FORUM", "FOUND", "FRAME", "FRAUD", "FRESH", "FRONT", "FROST", "FRUIT", "FULLY", "FUNNY", "GIANT", "GIVEN", "GLASS", "GLOBE", "GLORY", "GLOVE", "GRACE", "GRADE", "GRAIN", "GRAND", "GRANT", "GRASS", "GRAVE", "GREAT", "GREEN", "GREET", "GRIEF", "GRILL", "GROSS", "GROUP", "GROVE", "GROWN", "GUARD", "GUESS", "GUEST", "GUIDE", "HABIT", "HAPPY", "HARDY", "HARSH", "HASTE", "HAVEN", "HEART", "HEAVY", "HELLO", "HONEY", "HONOR", "HORSE", "HOTEL", "HOUSE", "HUMAN", "HUMOR", "HURRY", "IDEAL", "IMAGE", "INDEX", "INNER", "INPUT", "ISSUE", "JEANS", "JOINT", "JUDGE", "JUICE", "KNIFE", "KNOCK", "KNOWN", "LABEL", "LABOR", "LARGE", "LASER", "LATER", "LAUGH", "LAYER", "LEARN", "LEASE", "LEAST", "LEAVE", "LEGAL", "LEMON", "LEVEL", "LEVER", "LIGHT", "LIMIT", "LINKS", "LIVER", "LIVES", "LOCAL", "LODGE", "LOGIC", "LOOSE", "LUCKY", "LUNAR", "LUNCH", "MAGIC", "MAJOR", "MAKER", "MANGO", "MANOR", "MARCH", "MATCH", "MAYBE", "MAYOR", "MEDAL", "MEDIA", "MELON", "MERCY", "MERIT", "METAL", "METER", "METRO", "MICRO", "MIDST", "MIGHT", "MINOR", "MINUS", "MODEL", "MONEY", "MONTH", "MORAL", "MOTOR", "MOUNT", "MOUSE", "MOUTH", "MOVIE", "MUSIC", "NAIVE", "NERVE", "NIGHT", "NOBLE", "NOISE", "NORTH", "NOTED", "NOVEL", "NURSE", "OASIS", "OCCUR", "OCEAN", "OFFER", "OFTEN", "OLIVE", "ONION", "ONSET", "OPERA", "OPTIC", "ORBIT", "ORDER", "ORGAN", "OTHER", "OUGHT", "OUTER", "OXIDE", "PAINT", "PANEL", "PANIC", "PAPER", "PARTY", "PASTA", "PATCH", "PEACE", "PENNY", "PHASE", "PHONE", "PHOTO", "PIANO", "PIECE", "PILOT", "PITCH", "PIVOT", "PIZZA", "PLACE", "PLAIN", "PLANE", "PLANT", "PLATE", "PLAZA", "PLUMB", "POETRY", "POINT", "POLAR", "PORCH", "POUND", "POWER", "PRESS", "PRICE", "PRIDE", "PRIME", "PRINT", "PRIOR", "PRIZE", "PROBE", "PRONE", "PROUD", "PROVE", "PROXY", "PULSE", "PUPIL", "PURSE", "QUEEN", "QUERY", "QUEST", "QUICK", "QUIET", "QUILT", "QUITE", "QUOTE", "RADAR", "RADIO", "RAISE", "RALLY", "RANCH", "RANGE", "RAPID", "RATIO", "REACH", "REACT", "READY", "REALM", "REBEL", "REFER", "REIGN", "RELAX", "REPLY", "RIDER", "RIDGE", "RIFLE", "RIGHT", "RIGID", "RIVER", "ROBOT", "ROCKY", "ROUND", "ROUTE", "ROYAL", "RULER", "RURAL", "SADLY", "SAINT", "SALAD", "SAUCE", "SCALE", "SCENE", "SCENT", "SCOPE", "SCORE", "SCOUT", "SCREW", "SEDAN", "SERVE", "SETUP", "SEVEN", "SHADE", "SHADOW", "SHAFT", "SHAKE", "SHALL", "SHAME", "SHAPE", "SHARE", "SHARK", "SHARP", "SHEEP", "SHEER", "SHEET", "SHELF", "SHELL", "SHIFT", "SHINE", "SHIRT", "SHOCK", "SHOOT", "SHORE", "SHORT", "SHOUT", "SHOWN", "SIGHT", "SINCE", "SIXTH", "SIXTY", "SKILL", "SKULL", "SLASH", "SLATE", "SLEEP", "SLICE", "SLIDE", "SMART", "SMELL", "SMILE", "SMOKE", "SOLAR", "SOLID", "SOLVE", "SORRY", "SOUND", "SOUTH", "SPACE", "SPARE", "SPARK", "SPEAK", "SPEED", "SPELL", "SPEND", "SPICE", "SPIKE", "SPIN", "SPITE", "SPLIT", "SPOKE", "SPORT", "SQUAD", "STAFF", "STAGE", "STAIN", "STAKE", "STAND", "STARE", "START", "STATE", "STEAM", "STEEL", "STEEP", "STEER", "STICK", "STILL", "STOCK", "STONE", "STOOD", "STOOL", "STOP", "STORM", "STORY", "STRIP", "STUDY", "STUFF", "STYLE", "SUGAR", "SUITE", "SUPER", "SURGE", "SWEAR", "SWEEP", "SWEET", "SWIFT", "SWING", "TABLE", "TASTE", "TEACH", "THEME", "THERE", "THESE", "THICK", "THING", "THINK", "THIRD", "THOSE", "THREE", "THREW", "THROW", "TIGER", "TIGHT", "TIMER", "TITLE", "TODAY", "TOKEN", "TOOTH", "TOPIC", "TORCH", "TOTAL", "TOUCH", "TOUGH", "TOWER", "TRACK", "TRADE", "TRAIL", "TRAIN", "TRAIT", "TREAT", "TREND", "TRIAL", "TRIBE", "TRICK", "TRIED", "TROOP", "TRUCK", "TRULY", "TRUNK", "TRUST", "TRUTH", "TWICE", "TWIST", "TYING", "UNCLE", "UNDER", "UNION", "UNITY", "UNTIL", "UPPER", "UPSET", "URBAN", "USAGE", "USUAL", "VAGUE", "VALID", "VALUE", "VIDEO", "VILLA", "VIRAL", "VIRUS", "VISIT", "VITAL", "VOICE", "VOTER", "WAGON", "WASTE", "WATCH", "WATER", "WAVE", "WEARY", "WEIGH", "WHALE", "WHEAT", "WHEEL", "WHERE", "WHICH", "WHILE", "WHITE", "WHOLE", "WHOSE", "WIDOW", "WIDTH", "WOMAN", "WORLD", "WORRY", "WORSE", "WORST", "WORTH", "WOULD", "WOUND", "WRITE", "WRONG", "WROTE", "YACHT", "YEARN", "YIELD", "YOUNG", "YOUTH", "ZEBRA"
+    ]);
+
+    // Ensure all curated words are inside the valid dictionary set
+    Object.values(WORDLE_CATEGORIES).forEach(c => {
+      c.words.forEach(w => VALID_DICTIONARY_SET.add(w));
+    });
+
+    class WordleDeck {
+      constructor() {
+        this.deck = [];
+        this.index = 0;
+      }
+      prepare() {
+        this.deck = [];
+        this.index = 0;
+        Object.entries(WORDLE_CATEGORIES).forEach(([key, cat]) => {
+          cat.words.forEach(word => {
+            this.deck.push({
+              word: word.toUpperCase(),
+              category: cat.name,
+              icon: cat.icon
+            });
+          });
+        });
+        // Fisher-Yates Shuffle
+        for (let i = this.deck.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [this.deck[i], this.deck[j]] = [this.deck[j], this.deck[i]];
+        }
+      }
+      next() {
+        if (this.deck.length === 0) this.prepare();
+        if (this.index >= this.deck.length) {
+          this.prepare();
+        }
+        return this.deck[this.index++];
+      }
+    }
+    const deckEngine = new WordleDeck();
+
+    const AVATARS = [
+      { emoji: "🐺", name: "Wolves", color: "from-blue-600 to-indigo-600", border: "border-blue-500", hex: "#3b82f6" },
+      { emoji: "🐉", name: "Dragons", color: "from-rose-600 to-amber-600", border: "border-rose-500", hex: "#f43f5e" },
+      { emoji: "⚡", name: "Thunder", color: "from-amber-500 to-yellow-600", border: "border-amber-500", hex: "#f59e0b" },
+      { emoji: "🥷", name: "Ninjas", color: "from-emerald-600 to-teal-600", border: "border-emerald-500", hex: "#10b981" },
+      { emoji: "🐍", name: "Vipers", color: "from-purple-600 to-pink-600", border: "border-purple-500", hex: "#a855f7" },
+      { emoji: "👻", name: "Phantoms", color: "from-cyan-500 to-blue-600", border: "border-cyan-500", hex: "#06b6d4" },
+      { emoji: "🦁", name: "Lions", color: "from-yellow-500 to-amber-600", border: "border-yellow-400", hex: "#eab308" },
+      { emoji: "🦈", name: "Sharks", color: "from-slate-600 to-slate-800", border: "border-slate-500", hex: "#64748b" }
+    ];
+
+    class WordleDualNetwork {
+      constructor() {
+        this.roomCode = null;
+        this.isHost = false;
+        this.channel = null;
+        this.peer = null;
+        this.peerConnections = new Map();
+        this.hostPeerConn = null;
+        this.onMessage = null;
+        this.onTeamJoin = null;
+        this.onTeamLeave = null;
+        this.storageKey = null;
+      }
+
+      initHost(roomCode, onMessage, onTeamJoin, onTeamLeave) {
+        this.roomCode = roomCode.toUpperCase();
+        this.isHost = true;
+        this.onMessage = onMessage;
+        this.onTeamJoin = onTeamJoin;
+        this.onTeamLeave = onTeamLeave;
+        this.storageKey = `wordle_royale_${this.roomCode}`;
+
+        // 1. Instant local sync via BroadcastChannel
+        try {
+          if ('BroadcastChannel' in window) {
+            this.channel = new BroadcastChannel(`wordle_channel_${this.roomCode}`);
+            this.channel.onmessage = (e) => this.handleLocalMessage(e.data);
+          }
+        } catch (e) {}
+
+        // Local storage listener fallback
+        window.addEventListener('storage', (e) => {
+          if (e.key === this.storageKey && e.newValue) {
+            try {
+              const data = JSON.parse(e.newValue);
+              this.handleLocalMessage(data);
+            } catch (err) {}
+          }
+        });
+
+        // 2. PeerJS WebRTC P2P
+        this.initHostWebRTC();
+      }
+
+      initHostWebRTC() {
+        if (typeof Peer === 'undefined') return;
+        try {
+          const peerId = `wordle-clash-${this.roomCode}`;
+          this.peer = new Peer(peerId, { debug: 0 });
+
+          this.peer.on('open', () => {
+            const badge = document.getElementById("globalNetBadge");
+            if (badge) {
+              badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Online & P2P Ready`;
+            }
+          });
+
+          this.peer.on('connection', (conn) => {
+            conn.on('open', () => {
+              conn.on('data', (data) => {
+                if (data.type === 'REGISTER_TEAM') {
+                  this.peerConnections.set(data.payload.team.id, conn);
+                  if (this.onTeamJoin) this.onTeamJoin(data.payload.team);
+                }
+                if (this.onMessage) this.onMessage(data);
+              });
+            });
+
+            conn.on('close', () => {
+              for (let [tid, c] of this.peerConnections.entries()) {
+                if (c === conn) {
+                  this.peerConnections.delete(tid);
+                  if (this.onTeamLeave) this.onTeamLeave(tid);
+                }
+              }
+            });
+          });
+
+          this.peer.on('error', (err) => {
+            console.warn("PeerJS notice (Local channel active):", err.type);
+          });
+        } catch (e) {}
+      }
+
+      initClient(roomCode, team, onMessage, onConnected, onError) {
+        this.roomCode = roomCode.toUpperCase();
+        this.isHost = false;
+        this.onMessage = onMessage;
+        this.storageKey = `wordle_royale_${this.roomCode}`;
+
+        // Local sync
+        try {
+          if ('BroadcastChannel' in window) {
+            this.channel = new BroadcastChannel(`wordle_channel_${this.roomCode}`);
+            this.channel.onmessage = (e) => {
+              if (this.onMessage) this.onMessage(e.data);
+            };
+          }
+        } catch (e) {}
+
+        window.addEventListener('storage', (e) => {
+          if (e.key === this.storageKey && e.newValue) {
+            try {
+              const data = JSON.parse(e.newValue);
+              if (this.onMessage) this.onMessage(data);
+            } catch (err) {}
+          }
+        });
+
+        // Register immediately
+        setTimeout(() => {
+          this.sendToHost('REGISTER_TEAM', { team });
+          if (onConnected) onConnected();
+        }, 60);
+
+        // WebRTC P2P
+        if (typeof Peer !== 'undefined') {
+          try {
+            this.peer = new Peer({ debug: 0 });
+            this.peer.on('open', () => {
+              const hostId = `wordle-clash-${this.roomCode}`;
+              this.hostPeerConn = this.peer.connect(hostId, { reliable: true });
+
+              this.hostPeerConn.on('open', () => {
+                this.hostPeerConn.send({
+                  type: 'REGISTER_TEAM',
+                  payload: { team },
+                  timestamp: Date.now()
+                });
+              });
+
+              this.hostPeerConn.on('data', (data) => {
+                if (this.onMessage) this.onMessage(data);
+              });
+            });
+          } catch (e) {}
+        }
+      }
+
+      handleLocalMessage(data) {
+        if (!data) return;
+        if (this.isHost && data.type === 'REGISTER_TEAM' && data.payload?.team) {
+          if (this.onTeamJoin) this.onTeamJoin(data.payload.team);
+        }
+        if (this.onMessage) this.onMessage(data);
+      }
+
+      broadcastToClients(type, payload = {}) {
+        const msg = { type, payload, timestamp: Date.now(), fromHost: true };
+        if (this.channel) {
+          try { this.channel.postMessage(msg); } catch (e) {}
+        }
+        try {
+          localStorage.setItem(this.storageKey, JSON.stringify(msg));
+        } catch (e) {}
+        for (let conn of this.peerConnections.values()) {
+          if (conn && conn.open) {
+            try { conn.send(msg); } catch (e) {}
+          }
+        }
+      }
+
+      sendToHost(type, payload = {}) {
+        const msg = { type, payload, timestamp: Date.now(), fromClient: true };
+        if (this.channel) {
+          try { this.channel.postMessage(msg); } catch (e) {}
+        }
+        try {
+          localStorage.setItem(this.storageKey, JSON.stringify(msg));
+        } catch (e) {}
+        if (this.hostPeerConn && this.hostPeerConn.open) {
+          try { this.hostPeerConn.send(msg); } catch (e) {}
+        }
+      }
+    }
+    const net = new WordleDualNetwork();
+
+    let currentRole = "NONE";
+    let currentRoomCode = "CLSH";
+    let myPlayerTeam = null;
+
+    let hostConfig = {
+      roundTimer: 90,
+      totalRounds: 5,
+      showCategory: true,
+      gracePeriod: 15
+    };
+
+    let connectedTeams = [];
+    let currentRound = 1;
+    let activeWordData = { word: "CRANE", category: "Nature & Outdoors", icon: "🌿" };
+    let hostTimerCount = 90;
+    let hostTimerInterval = null;
+    let isPaused = false;
+    let firstSolverTeam = null;
+    let graceCountdown = 15;
+    let graceInterval = null;
+    let roundSolversList = [];
+    let selectedAvatarIdx = 0;
+
+    // Participant state variables
+    let playerBoardState = [
+      ["", "", "", "", ""],
+      ["", "", "", "", ""],
+      ["", "", "", "", ""],
+      ["", "", "", "", ""],
+      ["", "", "", "", ""],
+      ["", "", "", "", ""]
+    ];
+    let playerRowEvaluations = [[], [], [], [], [], []];
+    let currentRowIdx = 0;
+    let currentColIdx = 0;
+    let isGameLocked = false;
+    let playerKeyStatuses = {}; // letter => 'correct' | 'present' | 'absent'
+
+    document.addEventListener("DOMContentLoaded", () => {
+      buildAvatarGrid();
+      buildVirtualKeyboard();
+      setupEventListeners();
+      checkAutoJoinUrl();
+    });
+
+    function setupEventListeners() {
+      // Sound Toggle
+      document.getElementById("soundToggleBtn").addEventListener("click", () => {
+        const muted = sound.toggleMute();
+        document.getElementById("soundIcon").innerText = muted ? "🔇" : "🔊";
+        document.getElementById("soundLabel").innerText = muted ? "Muted" : "Sound";
+      });
+
+      // Role Exit
+      document.getElementById("switchRoleNavBtn").addEventListener("click", () => {
+        window.location.hash = "";
+        location.reload();
+      });
+
+      // Role Selection Buttons
+      document.getElementById("startHostRoleBtn").addEventListener("click", setupHostRole);
+      document.getElementById("startPlayerRoleBtn").addEventListener("click", () => {
+        showView("playerJoinView");
+      });
+
+      // Host Lobby Controls
+      const timerSlider = document.getElementById("hostTimerSlider");
+      timerSlider.addEventListener("input", (e) => {
+        hostConfig.roundTimer = parseInt(e.target.value);
+        document.getElementById("hostTimerDisplay").innerText = `${hostConfig.roundTimer}s`;
+      });
+      document.getElementById("hostRoundsSelect").addEventListener("change", (e) => {
+        const val = e.target.value;
+        hostConfig.totalRounds = val === "infinite" ? "infinite" : parseInt(val);
+      });
+      document.getElementById("hostCategorySelect").addEventListener("change", (e) => {
+        hostConfig.showCategory = (e.target.value === "show");
+      });
+      document.getElementById("hostGracePeriodSelect").addEventListener("change", (e) => {
+        hostConfig.gracePeriod = parseInt(e.target.value);
+      });
+
+      document.getElementById("hostShowQrBtn").addEventListener("click", openQrModal);
+      document.getElementById("closeQrModalBtn").addEventListener("click", () => {
+        document.getElementById("qrCodeModal").classList.add("hidden");
+      });
+      document.getElementById("hostCopyLinkBtn").addEventListener("click", copyInviteLink);
+      document.getElementById("hostAddBotTeamBtn").addEventListener("click", hostAddDemoTeam);
+      document.getElementById("hostStartMatchBtn").addEventListener("click", hostStartMatch);
+
+      // Host Arena Controls
+      document.getElementById("hostPauseBtn").addEventListener("click", hostTogglePause);
+      document.getElementById("hostSkipBtn").addEventListener("click", hostSkipRound);
+      document.getElementById("hostEndMatchEarlyBtn").addEventListener("click", hostShowGrandPodium);
+
+      // Player Join & Connect
+      document.getElementById("playerConnectBtn").addEventListener("click", playerJoinRoom);
+
+      // Advance Round & Rematch
+      document.getElementById("advanceRoundBtn").addEventListener("click", hostAdvanceNextRound);
+      document.getElementById("rematchHostBtn").addEventListener("click", hostRematch);
+
+      // Physical Keyboard Listener for Player
+      window.addEventListener("keydown", (e) => {
+        if (currentRole !== "PLAYER" || isGameLocked) return;
+        if (e.key === "Enter") {
+          handlePlayerSubmitWord();
+        } else if (e.key === "Backspace") {
+          handlePlayerBackspace();
+        } else if (/^[a-zA-Z]$/.test(e.key)) {
+          handlePlayerInputLetter(e.key.toUpperCase());
+        }
+      });
+    }
+
+    function showView(viewId) {
+      const views = [
+        "roleSelectView", "hostLobbyView", "playerJoinView",
+        "playerWaitingView", "hostArenaView", "playerGameView"
+      ];
+      views.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle("hidden", id !== viewId);
+      });
+    }
+
+    function setupHostRole() {
+      currentRole = "HOST";
+      currentRoomCode = generateRoomCode();
+
+      document.getElementById("roomCodeHeaderText").innerText = currentRoomCode;
+      document.getElementById("hostRoomCodeText").innerText = currentRoomCode;
+      document.getElementById("roomPillHeader").classList.remove("hidden");
+
+      window.location.hash = `#room=${currentRoomCode}&role=host`;
+
+      showView("hostLobbyView");
+      updateHostLobbyTeamsUI();
+
+      net.initHost(
+        currentRoomCode,
+        handleHostIncomingMessage,
+        handleHostTeamConnected,
+        handleHostTeamDisconnected
+      );
+    }
+
+    function generateRoomCode() {
+      const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+      let code = "";
+      for (let i = 0; i < 4; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+      return code;
+    }
+
+    function checkAutoJoinUrl() {
+      const hash = window.location.hash;
+      const params = new URLSearchParams(window.location.search);
+      let room = params.get('room');
+      if (!room && hash.includes('room=')) {
+        const match = hash.match(/room=([A-Za-z0-9]{4,5})/);
+        if (match) room = match[1];
+      }
+      if (room) {
+        document.getElementById("playerJoinCodeInput").value = room.toUpperCase();
+        showView("playerJoinView");
+      }
+    }
+
+    function hostAddDemoTeam() {
+      const unusedAvatars = AVATARS.filter(a => !connectedTeams.some(t => t.emoji === a.emoji));
+      const av = unusedAvatars[0] || AVATARS[Math.floor(Math.random() * AVATARS.length)];
+      const num = connectedTeams.length + 1;
+      const demoTeam = {
+        id: `DEMO_${Date.now()}_${num}`,
+        name: `${av.name} ${num}`,
+        emoji: av.emoji,
+        color: av.color,
+        border: av.border,
+        hex: av.hex,
+        score: 0,
+        solves: 0,
+        guessesHistory: [[], [], [], [], [], []],
+        solvedRound: false
+      };
+      handleHostTeamConnected(demoTeam);
+      showToast(`Added demo team: ${demoTeam.name}!`);
+    }
+
+    function handleHostTeamConnected(team) {
+      if (!connectedTeams.some(t => t.id === team.id)) {
+        team.guessesHistory = [[], [], [], [], [], []];
+        team.solvedRound = false;
+        connectedTeams.push(team);
+        sound.tileFlipChime(0);
+        updateHostLobbyTeamsUI();
+        net.broadcastToClients("LOBBY_UPDATE", { teams: connectedTeams });
+      }
+    }
+
+    function handleHostTeamDisconnected(teamId) {
+      connectedTeams = connectedTeams.filter(t => t.id !== teamId);
+      updateHostLobbyTeamsUI();
+      net.broadcastToClients("LOBBY_UPDATE", { teams: connectedTeams });
+    }
+
+    function updateHostLobbyTeamsUI() {
+      const grid = document.getElementById("hostLobbyTeamsGrid");
+      grid.innerHTML = "";
+      document.getElementById("hostTeamsCountBadge").innerText = `${connectedTeams.length} Connected`;
+
+      if (connectedTeams.length === 0) {
+        grid.innerHTML = `
+          <div class="col-span-full flex flex-col items-center justify-center text-slate-500 py-6 text-xs sm:text-sm">
+            <span>No teams connected yet.</span>
+            <span class="text-[11px] text-slate-600 mt-1">Open another browser window or scan QR code to join!</span>
+          </div>`;
+      } else {
+        connectedTeams.forEach(t => {
+          const card = document.createElement("div");
+          card.className = `p-3 rounded-2xl bg-slate-900 border ${t.border} flex items-center justify-between gap-2 shadow-lg`;
+          card.innerHTML = `
+            <div class="flex items-center gap-2.5 truncate">
+              <div class="w-10 h-10 rounded-xl bg-gradient-to-br ${t.color} flex items-center justify-center text-xl shadow flex-shrink-0">
+                ${t.emoji}
+              </div>
+              <div class="truncate">
+                <span class="font-bold text-white text-sm block truncate">${t.name}</span>
+                <span class="text-[10px] text-emerald-400 font-mono font-bold">● READY</span>
+              </div>
+            </div>
+            <button onclick="hostKickTeam('${t.id}')" class="text-slate-600 hover:text-rose-400 p-1 rounded-lg text-xs font-bold cursor-pointer">✕</button>
+          `;
+          grid.appendChild(card);
+        });
+      }
+
+      const launchBtn = document.getElementById("hostStartMatchBtn");
+      if (connectedTeams.length >= 2) {
+        launchBtn.disabled = false;
+        launchBtn.className = "w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 font-display font-black text-base sm:text-lg text-white shadow-xl shadow-emerald-600/30 cursor-pointer active:scale-98 transition";
+        launchBtn.innerText = `START WORDLE CLASH WITH ${connectedTeams.length} TEAMS →`;
+      } else {
+        launchBtn.disabled = true;
+        launchBtn.className = "w-full py-4 rounded-2xl bg-slate-800 text-slate-500 font-display font-black text-base sm:text-lg cursor-not-allowed";
+        launchBtn.innerText = `WAITING FOR TEAMS (${connectedTeams.length}/2)...`;
+      }
+    }
+
+    window.hostKickTeam = function(teamId) {
+      connectedTeams = connectedTeams.filter(t => t.id !== teamId);
+      updateHostLobbyTeamsUI();
+      net.broadcastToClients("LOBBY_UPDATE", { teams: connectedTeams });
+    };
+
+    function copyInviteLink() {
+      const url = `${window.location.origin}${window.location.pathname}#room=${currentRoomCode}`;
+      const temp = document.createElement("input");
+      temp.value = url;
+      document.body.appendChild(temp);
+      temp.select();
+      document.execCommand("copy");
+      document.body.removeChild(temp);
+      showToast("Invite link copied to clipboard!");
+    }
+
+    function openQrModal() {
+      const url = `${window.location.origin}${window.location.pathname}#room=${currentRoomCode}`;
+      document.getElementById("qrRoomCodeBadge").innerText = currentRoomCode;
+      document.getElementById("qrSvgWrapper").innerHTML = generateSvgQrCode(url);
+      document.getElementById("qrCodeModal").classList.remove("hidden");
+    }
+
+    function generateSvgQrCode(text) {
+      const size = 25;
+      let cells = "";
+      let hash = 0;
+      for (let i = 0; i < text.length; i++) {
+        hash = (hash << 5) - hash + text.charCodeAt(i);
+        hash |= 0;
+      }
+      for (let r = 0; r < size; r++) {
+        for (let c = 0; c < size; c++) {
+          const isCorner = (r < 7 && c < 7) || (r < 7 && c >= size - 7) || (r >= size - 7 && c < 7);
+          const isBorder = isCorner && (r === 0 || r === 6 || c === 0 || c === 6 || r === size - 7 || r === size - 1 || c === size - 7 || c === size - 1);
+          const isCenter = isCorner && (r >= 2 && r <= 4 && c >= 2 && c <= 4 || r >= 2 && r <= 4 && c >= size - 5 && c <= size - 3 || r >= size - 5 && r <= size - 3 && c >= 2 && c <= 4);
+          let fill = false;
+          if (isBorder || isCenter) {
+            fill = true;
+          } else if (!isCorner) {
+            const val = Math.sin(r * 12.9898 + c * 78.233 + hash) * 43758.5453;
+            fill = (val - Math.floor(val)) > 0.45;
+          }
+          if (fill) {
+            cells += `<rect x="${c * 8}" y="${r * 8}" width="8" height="8" fill="#0f172a" />`;
+          }
+        }
+      }
+      return `<svg viewBox="0 0 200 200" width="100%" height="100%">${cells}</svg>`;
+    }
+
+    function showToast(msg) {
+      const toast = document.createElement("div");
+      toast.className = "fixed bottom-5 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border border-emerald-500 text-white font-bold text-xs px-4 py-2.5 rounded-full shadow-2xl animate-bounce";
+      toast.innerText = msg;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 2200);
+    }
+
+    function buildAvatarGrid() {
+      const grid = document.getElementById("playerAvatarGrid");
+      grid.innerHTML = "";
+      AVATARS.forEach((av, idx) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = `p-2 rounded-xl border flex flex-col items-center justify-center gap-0.5 transition cursor-pointer ${
+          idx === 0 ? "border-emerald-500 bg-emerald-500/20 ring-2 ring-emerald-500" : "border-slate-800 bg-slate-950"
+        }`;
+        btn.innerHTML = `<span class="text-2xl">${av.emoji}</span><span class="text-[9px] font-bold text-slate-400 truncate w-full text-center">${av.name}</span>`;
+        btn.addEventListener("click", () => {
+          selectedAvatarIdx = idx;
+          grid.querySelectorAll("button").forEach((b, i) => {
+            b.className = `p-2 rounded-xl border flex flex-col items-center justify-center gap-0.5 transition cursor-pointer ${
+              i === idx ? "border-emerald-500 bg-emerald-500/20 ring-2 ring-emerald-500" : "border-slate-800 bg-slate-950"
+            }`;
+          });
+        });
+        grid.appendChild(btn);
+      });
+    }
+
+    function playerJoinRoom() {
+      const codeInput = document.getElementById("playerJoinCodeInput").value.trim().toUpperCase();
+      const nameInput = document.getElementById("playerTeamNameInput").value.trim();
+
+      if (codeInput.length < 4) {
+        showToast("Enter a valid Room Code!");
+        return;
+      }
+      if (!nameInput) {
+        showToast("Please enter a team name!");
+        return;
+      }
+
+      currentRole = "PLAYER";
+      currentRoomCode = codeInput;
+      const avatar = AVATARS[selectedAvatarIdx];
+      myPlayerTeam = {
+        id: `TEAM_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
+        name: nameInput,
+        emoji: avatar.emoji,
+        color: avatar.color,
+        border: avatar.border,
+        hex: avatar.hex,
+        score: 0,
+        solves: 0
+      };
+
+      document.getElementById("playerJoinStatus").classList.remove("hidden");
+      document.getElementById("playerConnectBtn").disabled = true;
+
+      net.initClient(
+        currentRoomCode,
+        myPlayerTeam,
+        handlePlayerIncomingMessage,
+        () => {
+          document.getElementById("roomCodeHeaderText").innerText = currentRoomCode;
+          document.getElementById("roomPillHeader").classList.remove("hidden");
+          document.getElementById("pWaitingName").innerText = myPlayerTeam.name;
+          document.getElementById("pWaitingBadge").innerText = myPlayerTeam.emoji;
+          document.getElementById("pWaitingBadge").className = `w-20 h-20 rounded-3xl mx-auto flex items-center justify-center text-4xl shadow-xl mb-3 border-2 ${myPlayerTeam.border} bg-gradient-to-br ${myPlayerTeam.color}`;
+          document.getElementById("pWaitingRoomCode").innerText = currentRoomCode;
+
+          showView("playerWaitingView");
+        },
+        () => {
+          showToast("Connection failed. Check room code.");
+          document.getElementById("playerConnectBtn").disabled = false;
+        }
+      );
+    }
+
+    function hostStartMatch() {
+      if (connectedTeams.length < 2) return;
+      currentRound = 1;
+      connectedTeams.forEach(t => {
+        t.score = 0;
+        t.solves = 0;
+        t.guessesHistory = [[], [], [], [], [], []];
+        t.solvedRound = false;
+      });
+
+      deckEngine.prepare();
+      showView("hostArenaView");
+      hostStartRound();
+    }
+
+    function hostStartRound() {
+      activeWordData = deckEngine.next();
+      firstSolverTeam = null;
+      roundSolversList = [];
+      hostTimerCount = hostConfig.roundTimer;
+      isPaused = false;
+      clearInterval(graceInterval);
+      clearInterval(hostTimerInterval);
+
+      // Reset team round state
+      connectedTeams.forEach(t => {
+        t.guessesHistory = [[], [], [], [], [], []];
+        t.solvedRound = false;
+      });
+
+      document.getElementById("hostLiveSolverBanner").classList.add("hidden");
+      updateHostArenaHeader();
+      renderHostTeamCards();
+      startHostTimer();
+
+      net.broadcastToClients("ROUND_START", {
+        round: currentRound,
+        totalRounds: hostConfig.totalRounds,
+        targetWord: activeWordData.word,
+        category: hostConfig.showCategory ? activeWordData.category : "Mystery Word",
+        icon: hostConfig.showCategory ? activeWordData.icon : "❓",
+        roundTimer: hostConfig.roundTimer,
+        teams: connectedTeams
+      });
+    }
+
+    function startHostTimer() {
+      clearInterval(hostTimerInterval);
+      updateHostTimerBar();
+
+      hostTimerInterval = setInterval(() => {
+        if (isPaused) return;
+        hostTimerCount--;
+        updateHostTimerBar();
+
+        if (hostTimerCount <= 5 && hostTimerCount > 0) sound.tick();
+
+        if (hostTimerCount <= 0) {
+          clearInterval(hostTimerInterval);
+          hostConcludeRound("Time has expired!");
+        }
+      }, 1000);
+    }
+
+    function updateHostTimerBar() {
+      const text = document.getElementById("hostTimerText");
+      const bar = document.getElementById("hostTimerBar");
+      text.innerText = `${Math.max(0, hostTimerCount)}s`;
+
+      const pct = (hostTimerCount / hostConfig.roundTimer) * 100;
+      bar.style.width = `${Math.max(0, pct)}%`;
+
+      if (pct <= 25) {
+        bar.className = "h-full bg-gradient-to-r from-rose-600 to-amber-500 rounded-full transition-all";
+        text.className = "font-mono font-black text-2xl text-rose-500 animate-pulse";
+      } else {
+        bar.className = "h-full bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full transition-all";
+        text.className = "font-mono font-black text-2xl text-emerald-400";
+      }
+
+      net.broadcastToClients("TIMER_SYNC", { timer: hostTimerCount });
+    }
+
+    function updateHostArenaHeader() {
+      const rStr = hostConfig.totalRounds === "infinite" ? `Round ${currentRound} (∞)` : `Round ${currentRound} / ${hostConfig.totalRounds}`;
+      document.getElementById("hostRoundBadge").innerText = rStr;
+      document.getElementById("hostCategoryName").innerText = hostConfig.showCategory ? activeWordData.category : "Mystery Word";
+      document.getElementById("hostCategoryIcon").innerText = hostConfig.showCategory ? activeWordData.icon : "❓";
+    }
+
+    function hostTogglePause() {
+      isPaused = !isPaused;
+      document.getElementById("hostPauseBtn").innerText = isPaused ? "▶️ Resume" : "⏸️ Pause";
+      showToast(isPaused ? "Match Paused" : "Match Resumed");
+    }
+
+    function hostSkipRound() {
+      clearInterval(hostTimerInterval);
+      clearInterval(graceInterval);
+      hostConcludeRound("Host skipped this round.");
+    }
+
+    function renderHostTeamCards() {
+      const grid = document.getElementById("hostTeamCardsGrid");
+      grid.innerHTML = "";
+
+      connectedTeams.forEach(team => {
+        const card = document.createElement("div");
+        card.id = `host-team-card-${team.id}`;
+        card.className = `p-3 rounded-2xl bg-slate-950 border ${team.solvedRound ? 'border-emerald-400 bg-emerald-950/20' : 'border-slate-800'} flex flex-col justify-between transition-all duration-300`;
+
+        // Card Header
+        let headerHtml = `
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <div class="flex items-center gap-2 truncate">
+              <div class="w-8 h-8 rounded-lg bg-gradient-to-br ${team.color} flex items-center justify-center text-base shadow flex-shrink-0">
+                ${team.emoji}
+              </div>
+              <span class="font-bold text-white text-xs truncate">${team.name}</span>
+            </div>
+            <span class="font-mono font-black text-amber-400 text-xs">${team.score} pts</span>
+          </div>
+        `;
+
+        // 6x5 Mini Colored Matrix
+        let miniMatrixHtml = `<div class="grid grid-rows-6 gap-1 w-full max-w-[130px] mx-auto my-1">`;
+        for (let r = 0; r < 6; r++) {
+          miniMatrixHtml += `<div class="grid grid-cols-5 gap-1">`;
+          const rowEval = team.guessesHistory[r] || [];
+          for (let c = 0; c < 5; c++) {
+            const status = rowEval[c] || "empty";
+            let colorCls = "mini-empty";
+            if (status === "correct") colorCls = "mini-correct";
+            else if (status === "present") colorCls = "mini-present";
+            else if (status === "absent") colorCls = "mini-absent";
+
+            miniMatrixHtml += `<div class="w-full aspect-square rounded-sm border border-slate-800 ${colorCls} transition-colors duration-200"></div>`;
+          }
+          miniMatrixHtml += `</div>`;
+        }
+        miniMatrixHtml += `</div>`;
+
+        // Status Footer
+        let footerText = team.solvedRound ? "🎉 Solved!" : "Guessing...";
+        let footerCls = team.solvedRound ? "text-emerald-400 font-bold" : "text-slate-500";
+        let footerHtml = `
+          <div class="text-center text-[10px] ${footerCls} mt-1.5 font-mono">
+            ${footerText}
+          </div>
+        `;
+
+        card.innerHTML = headerHtml + miniMatrixHtml + footerHtml;
+        grid.appendChild(card);
+      });
+    }
+
+    function handleHostIncomingMessage(msg) {
+      const { type, payload } = msg;
+
+      switch (type) {
+        case "TEAM_ROW_GUESS":
+          handleHostTeamRowGuess(payload);
+          break;
+        case "TEAM_SOLVED_WORD":
+          handleHostTeamSolved(payload);
+          break;
+      }
+    }
+
+    function handleHostTeamRowGuess(payload) {
+      const team = connectedTeams.find(t => t.id === payload.teamId);
+      if (!team) return;
+
+      team.guessesHistory[payload.rowIndex] = payload.evaluation;
+      renderHostTeamCards();
+    }
+
+    function handleHostTeamSolved(payload) {
+      const team = connectedTeams.find(t => t.id === payload.teamId);
+      if (!team || team.solvedRound) return;
+
+      team.solvedRound = true;
+      team.guessesHistory[payload.rowIndex] = payload.evaluation;
+
+      // Point calculation: 1st place gets 100 bonus, graded by attempt count
+      const solveRank = roundSolversList.length + 1;
+      let points = 50 + (6 - payload.rowIndex) * 10;
+      if (solveRank === 1) points += 50; // +50 bonus for first solver!
+      else if (solveRank === 2) points += 25;
+      else if (solveRank === 3) points += 10;
+
+      team.score += points;
+      team.solves += 1;
+
+      roundSolversList.push({
+        team,
+        rank: solveRank,
+        tries: payload.rowIndex + 1,
+        pointsAwarded: points
+      });
+
+      renderHostTeamCards();
+      sound.solveCheer();
+      triggerConfetti();
+
+      // First solver celebration banner
+      if (!firstSolverTeam) {
+        firstSolverTeam = team;
+        const banner = document.getElementById("hostLiveSolverBanner");
+        document.getElementById("hostSolverBannerText").innerText = `${team.name.toUpperCase()} SOLVED THE WORD FIRST IN ${payload.rowIndex + 1} TRIES! (+${points} PTS)`;
+        banner.classList.remove("hidden");
+
+        if (hostConfig.gracePeriod > 0) {
+          startGraceCountdown(hostConfig.gracePeriod);
+        } else {
+          hostConcludeRound(`${team.name} solved the word instantly!`);
+        }
+      }
+    }
+
+    function startGraceCountdown(duration) {
+      graceCountdown = duration;
+      clearInterval(graceInterval);
+      const text = document.getElementById("hostGraceCountdownText");
+      text.innerText = `${graceCountdown}s Grace period remaining for other teams!`;
+
+      graceInterval = setInterval(() => {
+        graceCountdown--;
+        text.innerText = `${graceCountdown}s Grace period remaining for other teams!`;
+        if (graceCountdown <= 0) {
+          clearInterval(graceInterval);
+          hostConcludeRound("Grace period concluded!");
+        }
+      }, 1000);
+    }
+
+    function hostConcludeRound(reason) {
+      clearInterval(hostTimerInterval);
+      clearInterval(graceInterval);
+
+      // Reveal to Host & broadcast to players
+      const modal = document.getElementById("roundRecapModal");
+      document.getElementById("recapTargetWord").innerText = activeWordData.word;
+      document.getElementById("recapSubtext").innerText = reason;
+
+      const solversWrap = document.getElementById("recapSolversList");
+      solversWrap.innerHTML = "";
+
+      if (roundSolversList.length === 0) {
+        solversWrap.innerHTML = `<span class="text-slate-500 italic text-xs">No team solved this round in time!</span>`;
+      } else {
+        roundSolversList.forEach(s => {
+          const item = document.createElement("div");
+          item.className = "p-2 rounded-xl bg-slate-950 border border-slate-800 flex justify-between items-center text-xs";
+          item.innerHTML = `
+            <div class="flex items-center gap-2">
+              <span class="font-mono font-bold text-amber-400">#${s.rank}</span>
+              <span>${s.team.emoji}</span>
+              <span class="text-white font-bold">${s.team.name}</span>
+              <span class="text-[10px] text-slate-400 font-mono">(${s.tries} tries)</span>
+            </div>
+            <span class="font-mono font-bold text-emerald-400">+${s.pointsAwarded} pts</span>
+          `;
+          solversWrap.appendChild(item);
+        });
+      }
+
+      modal.classList.remove("hidden");
+
+      net.broadcastToClients("ROUND_OVER", {
+        targetWord: activeWordData.word,
+        solvers: roundSolversList,
+        reason,
+        teams: connectedTeams
+      });
+    }
+
+    function hostAdvanceNextRound() {
+      document.getElementById("roundRecapModal").classList.add("hidden");
+      currentRound++;
+
+      if (hostConfig.totalRounds !== "infinite" && currentRound > hostConfig.totalRounds) {
+        hostShowGrandPodium();
+        return;
+      }
+
+      hostStartRound();
+    }
+
+    function hostShowGrandPodium() {
+      sound.fanfare();
+      triggerConfetti(true);
+
+      const sorted = [...connectedTeams].sort((a,b) => b.score - a.score);
+      const cols = document.getElementById("podiumColumnsWrap");
+      cols.innerHTML = "";
+
+      const p1 = sorted[0];
+      const p2 = sorted[1] || null;
+      const p3 = sorted[2] || null;
+
+      if (p2) cols.appendChild(renderPodiumColumn(p2, "2nd", "h-24 sm:h-28", "bg-slate-700/60 border-slate-600", "🥈"));
+      if (p1) cols.appendChild(renderPodiumColumn(p1, "1st", "h-32 sm:h-36", "bg-gradient-to-t from-emerald-600/50 to-teal-500/50 border-emerald-400", "👑"));
+      if (p3) cols.appendChild(renderPodiumColumn(p3, "3rd", "h-18 sm:h-20", "bg-amber-900/40 border-amber-800", "🥉"));
+
+      const list = document.getElementById("podiumLeaderboardList");
+      list.innerHTML = "";
+      sorted.forEach((t, i) => {
+        const item = document.createElement("div");
+        item.className = "px-4 py-3 flex justify-between items-center text-xs font-semibold";
+        item.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="font-mono font-bold text-slate-500">#${i+1}</span>
+            <span>${t.emoji}</span>
+            <span class="text-white font-bold">${t.name}</span>
+            <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">🎯 ${t.solves} Solves</span>
+          </div>
+          <span class="font-mono font-black text-amber-400 text-sm">${t.score} pts</span>
+        `;
+        list.appendChild(item);
+      });
+
+      document.getElementById("podiumModal").classList.remove("hidden");
+
+      net.broadcastToClients("MATCH_PODIUM", {
+        standings: sorted
+      });
+    }
+
+    function renderPodiumColumn(team, rank, heightClass, bgBorder, crown) {
+      const col = document.createElement("div");
+      col.className = "flex flex-col items-center flex-1 max-w-[120px]";
+      col.innerHTML = `
+        <span class="text-xl mb-1">${crown}</span>
+        <div class="w-12 h-12 rounded-2xl bg-gradient-to-br ${team.color} flex items-center justify-center text-2xl shadow-lg border-2 ${team.border} mb-1">
+          ${team.emoji}
+        </div>
+        <span class="text-xs font-bold text-white truncate w-full text-center">${team.name}</span>
+        <span class="font-mono text-xs text-amber-400 font-extrabold mb-1">${team.score} pts</span>
+        <div class="w-full ${heightClass} ${bgBorder} border-t-2 rounded-t-2xl flex items-center justify-center font-display font-black text-lg sm:text-xl text-slate-300 shadow-inner">
+          ${rank}
+        </div>
+      `;
+      return col;
+    }
+
+    function hostRematch() {
+      document.getElementById("podiumModal").classList.add("hidden");
+      connectedTeams.forEach(t => { t.score = 0; t.solves = 0; });
+      currentRound = 1;
+      deckEngine.prepare();
+      hostStartRound();
+    }
+
+    function buildVirtualKeyboard() {
+      const qwerty = [
+        ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+        ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
+        ["ENTER", "Z", "X", "C", "V", "B", "N", "M", "⌫"]
+      ];
+      const wrap = document.getElementById("playerVirtualKeyboard");
+      wrap.innerHTML = "";
+
+      qwerty.forEach(row => {
+        const r = document.createElement("div");
+        r.className = "flex justify-center gap-1 sm:gap-1.5 w-full";
+        row.forEach(key => {
+          const btn = document.createElement("button");
+          btn.id = `key-${key}`;
+          const isWide = key === "ENTER" || key === "⌫";
+          btn.className = `h-11 sm:h-12 rounded-xl bg-slate-800 text-white font-mono font-black text-xs sm:text-sm border border-slate-700/80 active:scale-95 transition flex items-center justify-center cursor-pointer ${
+            isWide ? 'flex-[1.5] max-w-[64px]' : 'flex-1 max-w-[42px]'
+          }`;
+          btn.innerText = key;
+          btn.addEventListener("click", () => {
+            if (isGameLocked) return;
+            if (key === "ENTER") handlePlayerSubmitWord();
+            else if (key === "⌫") handlePlayerBackspace();
+            else handlePlayerInputLetter(key);
+          });
+          r.appendChild(btn);
+        });
+        wrap.appendChild(r);
+      });
+    }
+
+    function renderPlayerWordleBoard() {
+      const board = document.getElementById("wordleBoard");
+      board.innerHTML = "";
+
+      for (let r = 0; r < 6; r++) {
+        const rowDiv = document.createElement("div");
+        rowDiv.id = `row-${r}`;
+        rowDiv.className = "grid grid-cols-5 gap-1.5 sm:gap-2";
+
+        for (let c = 0; c < 5; c++) {
+          const char = playerBoardState[r][c] || "";
+          const tile = document.createElement("div");
+          tile.id = `tile-${r}-${c}`;
+          tile.className = `tile-cell aspect-square rounded-2xl border-2 flex items-center justify-center font-mono font-black text-xl sm:text-2xl transition-all ${
+            char ? 'border-slate-500 bg-slate-900 text-white pop' : 'border-slate-800 bg-slate-950/80 text-transparent'
+          }`;
+          tile.innerText = char;
+          rowDiv.appendChild(tile);
+        }
+        board.appendChild(rowDiv);
+      }
+    }
+
+    function handlePlayerInputLetter(letter) {
+      if (currentColIdx < 5 && currentRowIdx < 6) {
+        playerBoardState[currentRowIdx][currentColIdx] = letter;
+        const tile = document.getElementById(`tile-${currentRowIdx}-${currentColIdx}`);
+        if (tile) {
+          tile.innerText = letter;
+          tile.className = "tile-cell aspect-square rounded-2xl border-2 border-slate-500 bg-slate-900 text-white pop flex items-center justify-center font-mono font-black text-xl sm:text-2xl";
+        }
+        currentColIdx++;
+        sound.keyTap();
+        if (navigator.vibrate) navigator.vibrate(15);
+      }
+    }
+
+    function handlePlayerBackspace() {
+      if (currentColIdx > 0) {
+        currentColIdx--;
+        playerBoardState[currentRowIdx][currentColIdx] = "";
+        const tile = document.getElementById(`tile-${currentRowIdx}-${currentColIdx}`);
+        if (tile) {
+          tile.innerText = "";
+          tile.className = "tile-cell aspect-square rounded-2xl border-2 border-slate-800 bg-slate-950/80 text-transparent flex items-center justify-center font-mono font-black text-xl sm:text-2xl";
+        }
+        sound.keyTap();
+        if (navigator.vibrate) navigator.vibrate(15);
+      }
+    }
+
+    function handlePlayerSubmitWord() {
+      if (currentColIdx < 5) {
+        showPlayerRowToast("Not enough letters!");
+        shakeRow(currentRowIdx);
+        return;
+      }
+
+      const guess = playerBoardState[currentRowIdx].join("");
+
+      // Validate against common dictionary
+      if (!VALID_DICTIONARY_SET.has(guess)) {
+        showPlayerRowToast("Not in dictionary!");
+        shakeRow(currentRowIdx);
+        return;
+      }
+
+      // Evaluate guess colors (Wordle algorithm)
+      const evaluation = evaluateWordleGuess(guess, activeWordData.word);
+      playerRowEvaluations[currentRowIdx] = evaluation;
+
+      // Animate flipping tiles
+      animateRowEvaluation(currentRowIdx, evaluation, () => {
+        // Broadcast evaluation to Host
+        net.sendToHost("TEAM_ROW_GUESS", {
+          teamId: myPlayerTeam.id,
+          rowIndex: currentRowIdx,
+          evaluation: evaluation
+        });
+
+        const isSolved = evaluation.every(e => e === "correct");
+
+        if (isSolved) {
+          isGameLocked = true;
+          sound.solveCheer();
+          triggerConfetti();
+          net.sendToHost("TEAM_SOLVED_WORD", {
+            teamId: myPlayerTeam.id,
+            rowIndex: currentRowIdx,
+            evaluation: evaluation
+          });
+        } else {
+          currentRowIdx++;
+          currentColIdx = 0;
+          if (currentRowIdx >= 6) {
+            isGameLocked = true;
+            showPlayerRowToast("Out of attempts!");
+          }
+        }
+      });
+    }
+
+    function evaluateWordleGuess(guess, target) {
+      const result = Array(5).fill("absent");
+      const targetLetters = target.split("");
+      const guessLetters = guess.split("");
+
+      // Pass 1: Mark exact matches (Green)
+      for (let i = 0; i < 5; i++) {
+        if (guessLetters[i] === targetLetters[i]) {
+          result[i] = "correct";
+          targetLetters[i] = null;
+          guessLetters[i] = null;
+        }
+      }
+
+      // Pass 2: Mark present letters (Yellow)
+      for (let i = 0; i < 5; i++) {
+        if (guessLetters[i] !== null) {
+          const indexInTarget = targetLetters.indexOf(guessLetters[i]);
+          if (indexInTarget !== -1) {
+            result[i] = "present";
+            targetLetters[indexInTarget] = null;
+          }
+        }
+      }
+
+      return result;
+    }
+
+    function animateRowEvaluation(row, evaluation, onComplete) {
+      for (let col = 0; col < 5; col++) {
+        setTimeout(() => {
+          const tile = document.getElementById(`tile-${row}-${col}`);
+          const char = playerBoardState[row][col];
+          const status = evaluation[col];
+
+          if (tile) {
+            tile.classList.add("tile-flip");
+            setTimeout(() => {
+              if (status === "correct") {
+                tile.className = "tile-cell aspect-square rounded-2xl border-2 border-emerald-500 bg-emerald-600 text-white flex items-center justify-center font-mono font-black text-xl sm:text-2xl shadow-lg shadow-emerald-600/30";
+                updateKeyColor(char, "correct");
+              } else if (status === "present") {
+                tile.className = "tile-cell aspect-square rounded-2xl border-2 border-amber-500 bg-amber-500 text-slate-950 flex items-center justify-center font-mono font-black text-xl sm:text-2xl shadow-lg shadow-amber-500/30";
+                updateKeyColor(char, "present");
+              } else {
+                tile.className = "tile-cell aspect-square rounded-2xl border-2 border-slate-700 bg-slate-800 text-slate-400 flex items-center justify-center font-mono font-black text-xl sm:text-2xl";
+                updateKeyColor(char, "absent");
+              }
+              sound.tileFlipChime(col);
+            }, 250);
+          }
+
+          if (col === 4) {
+            setTimeout(onComplete, 550);
+          }
+        }, col * 200);
+      }
+    }
+
+    function updateKeyColor(letter, status) {
+      const keyBtn = document.getElementById(`key-${letter}`);
+      if (!keyBtn) return;
+
+      const current = playerKeyStatuses[letter];
+      if (current === "correct") return; // Keep green if already green
+      if (current === "present" && status === "absent") return;
+
+      playerKeyStatuses[letter] = status;
+
+      if (status === "correct") {
+        keyBtn.className = "h-11 sm:h-12 flex-1 max-w-[42px] rounded-xl bg-emerald-600 text-white font-mono font-black text-xs sm:text-sm border border-emerald-500 active:scale-95 transition flex items-center justify-center shadow-lg shadow-emerald-600/20";
+      } else if (status === "present") {
+        keyBtn.className = "h-11 sm:h-12 flex-1 max-w-[42px] rounded-xl bg-amber-500 text-slate-950 font-mono font-black text-xs sm:text-sm border border-amber-400 active:scale-95 transition flex items-center justify-center shadow-lg shadow-amber-500/20";
+      } else {
+        keyBtn.className = "h-11 sm:h-12 flex-1 max-w-[42px] rounded-xl bg-slate-900 text-slate-500 font-mono font-black text-xs sm:text-sm border border-slate-800 active:scale-95 transition flex items-center justify-center opacity-60";
+      }
+    }
+
+    function shakeRow(row) {
+      const rowDiv = document.getElementById(`row-${row}`);
+      if (rowDiv) {
+        rowDiv.classList.add("shake-row");
+        sound.shakeBuzz();
+        if (navigator.vibrate) navigator.vibrate([40, 40, 40]);
+        setTimeout(() => rowDiv.classList.remove("shake-row"), 500);
+      }
+    }
+
+    function showPlayerRowToast(msg) {
+      const toast = document.getElementById("pGameToast");
+      toast.innerText = msg;
+      toast.style.opacity = "1";
+      setTimeout(() => { toast.style.opacity = "0"; }, 1600);
+    }
+
+    function handlePlayerIncomingMessage(msg) {
+      const { type, payload } = msg;
+
+      switch (type) {
+        case "ROUND_START":
+          playerReceiveRoundStart(payload);
+          break;
+        case "TIMER_SYNC":
+          document.getElementById("pGameClockText").innerText = `${payload.timer}s`;
+          break;
+        case "ROUND_OVER":
+          playerReceiveRoundOver(payload);
+          break;
+        case "MATCH_PODIUM":
+          playerReceivePodium(payload);
+          break;
+      }
+    }
+
+    function playerReceiveRoundStart(data) {
+      showView("playerGameView");
+      document.getElementById("roundRecapModal").classList.add("hidden");
+
+      activeWordData.word = data.targetWord;
+      const me = data.teams.find(t => t.id === myPlayerTeam.id) || myPlayerTeam;
+
+      // Top bar info
+      document.getElementById("pGameTeamName").innerText = me.name;
+      document.getElementById("pGameBadge").innerText = me.emoji;
+      document.getElementById("pGameBadge").className = `w-10 h-10 rounded-xl bg-gradient-to-br ${me.color} flex items-center justify-center text-xl font-bold shadow`;
+      document.getElementById("pGameScore").innerText = me.score;
+
+      const rStr = data.totalRounds === "infinite" ? `ROUND ${data.round} (∞)` : `ROUND ${data.round}/${data.totalRounds}`;
+      document.getElementById("pGameRoundPill").innerText = rStr;
+      document.getElementById("pGameCategoryText").innerText = `${data.icon} ${data.category}`;
+
+      // Reset Player Wordle Board State
+      playerBoardState = [
+        ["", "", "", "", ""],
+        ["", "", "", "", ""],
+        ["", "", "", "", ""],
+        ["", "", "", "", ""],
+        ["", "", "", "", ""],
+        ["", "", "", "", ""]
+      ];
+      playerRowEvaluations = [[], [], [], [], [], []];
+      currentRowIdx = 0;
+      currentColIdx = 0;
+      isGameLocked = false;
+      playerKeyStatuses = {};
+
+      renderPlayerWordleBoard();
+      buildVirtualKeyboard();
+    }
+
+    function playerReceiveRoundOver(data) {
+      isGameLocked = true;
+      document.getElementById("hostAdvanceBtnWrap").classList.add("hidden");
+      document.getElementById("playerWaitNextNotice").classList.remove("hidden");
+
+      const modal = document.getElementById("roundRecapModal");
+      document.getElementById("recapTargetWord").innerText = data.targetWord;
+      document.getElementById("recapSubtext").innerText = data.reason;
+
+      const solversWrap = document.getElementById("recapSolversList");
+      solversWrap.innerHTML = "";
+
+      if (data.solvers.length === 0) {
+        solversWrap.innerHTML = `<span class="text-slate-500 italic text-xs">No team solved this round in time!</span>`;
+      } else {
+        data.solvers.forEach(s => {
+          const item = document.createElement("div");
+          item.className = "p-2 rounded-xl bg-slate-950 border border-slate-800 flex justify-between items-center text-xs";
+          item.innerHTML = `
+            <div class="flex items-center gap-2">
+              <span class="font-mono font-bold text-amber-400">#${s.rank}</span>
+              <span>${s.team.emoji}</span>
+              <span class="text-white font-bold">${s.team.name}</span>
+              <span class="text-[10px] text-slate-400 font-mono">(${s.tries} tries)</span>
+            </div>
+            <span class="font-mono font-bold text-emerald-400">+${s.pointsAwarded} pts</span>
+          `;
+          solversWrap.appendChild(item);
+        });
+      }
+
+      modal.classList.remove("hidden");
+    }
+
+    function playerReceivePodium(data) {
+      const modal = document.getElementById("podiumModal");
+      const cols = document.getElementById("podiumColumnsWrap");
+      cols.innerHTML = "";
+
+      const p1 = data.standings[0];
+      const p2 = data.standings[1] || null;
+      const p3 = data.standings[2] || null;
+
+      if (p2) cols.appendChild(renderPodiumColumn(p2, "2nd", "h-24 sm:h-28", "bg-slate-700/60 border-slate-600", "🥈"));
+      if (p1) cols.appendChild(renderPodiumColumn(p1, "1st", "h-32 sm:h-36", "bg-gradient-to-t from-emerald-600/50 to-teal-500/50 border-emerald-400", "👑"));
+      if (p3) cols.appendChild(renderPodiumColumn(p3, "3rd", "h-18 sm:h-20", "bg-amber-900/40 border-amber-800", "🥉"));
+
+      const list = document.getElementById("podiumLeaderboardList");
+      list.innerHTML = "";
+      data.standings.forEach((t, i) => {
+        const item = document.createElement("div");
+        item.className = "px-4 py-3 flex justify-between items-center text-xs font-semibold";
+        item.innerHTML = `
+          <div class="flex items-center gap-2">
+            <span class="font-mono font-bold text-slate-500">#${i+1}</span>
+            <span>${t.emoji}</span>
+            <span class="text-white font-bold">${t.name}</span>
+            <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/30">🎯 ${t.solves} Solves</span>
+          </div>
+          <span class="font-mono font-black text-amber-400 text-sm">${t.score} pts</span>
+        `;
+        list.appendChild(item);
+      });
+
+      document.getElementById("rematchHostBtn").classList.add("hidden");
+      modal.classList.remove("hidden");
+    }
+
+    function triggerConfetti(grand = false) {
+      if (typeof confetti === "function") {
+        try {
+          if (grand) {
+            confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 } });
+            setTimeout(() => confetti({ particleCount: 90, angle: 60, spread: 70, origin: { x: 0 } }), 200);
+            setTimeout(() => confetti({ particleCount: 90, angle: 120, spread: 70, origin: { x: 1 } }), 400);
+          } else {
+            confetti({ particleCount: 70, spread: 60, origin: { y: 0.7 } });
+          }
+        } catch (e) {}
+      }
+    }
+  </script>
+</body>
+</html>
